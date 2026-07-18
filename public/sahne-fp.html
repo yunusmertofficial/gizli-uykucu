@@ -389,7 +389,7 @@ function ingest(v) {
   if (!roleShown) { roleShown = true; showRole(); }   // tur başı: rolünü göster
   if (!scene) return;
   // Kafa hedefini ilk state'te sunucudan al (sicramasin).
-  if (aimHeading === null && v.public[myId]) aimHeading = v.public[myId].heading;
+  if (aimHeading === null && v.public[myId]) { aimHeading = v.public[myId].heading; camHeading = aimHeading; }
   for (const e of v.events) {
     if (e.t === 'gaze' && chars[e.actor]) chars[e.actor].playGaze();
     if (e.t === 'sleep' && chars[e.victim]) { log(`${names[e.victim]} uyudu`); SND.sleep(); }
@@ -624,6 +624,7 @@ const ORBIT_A = -Math.PI / 2, ORBIT_H = 13, ORBIT_R = 13;  // tepe goruntusu poz
 let aimHeading = null;                 // kendi kafa hedefim (surukleyerek doner)
 let dragging = false, lastX = 0;
 let blend = 0;                         // 0 = birinci sahis, 1 = tepe (sahne/olu/bitis)
+let camHeading = 0;                    // FP kameranın yerel-tahmini yönü (ağ gecikmesini bekleme)
 const fpPos = new THREE.Vector3(), fpTgt = new THREE.Vector3();
 const ovPos = new THREE.Vector3(), ovTgt = new THREE.Vector3(0, 1.2, 0), camTgt = new THREE.Vector3();
 
@@ -783,9 +784,13 @@ function frame(now) {
   // Kendi karakterin: birinci sahista gizli (icindesin), tepe/sahne/olu goruntusunde GORUNUR.
   if (chars[myId]) chars[myId].root.visible = overhead;
   if (myId >= 0 && renderHeading.length) {
-    const meS = seatXY[myId], h = renderHeading[myId] ?? 0;
+    const meS = seatXY[myId];
+    // FP kamera YEREL aim'i takip eder (ağ gidiş-dönüşünü beklemez → sürükleme akıcı).
+    // Oyun mantığı (koni/göz göze) yine sunucudaki gerçek yöne bağlı; kamera onu önceden gösterir.
+    const camT = (myAlive && phase === 'live' && aimHeading !== null) ? aimHeading : (renderHeading[myId] ?? 0);
+    camHeading = lerpAngle(camHeading, camT, Math.min(1, dt * 22));
     fpPos.set(meS.x, 1.9, meS.y);                               // goz hizasi, kendi sandalyen
-    fpTgt.set(meS.x + Math.cos(h) * 8, 1.05, meS.y + Math.sin(h) * 8); // kafanin baktigi yon
+    fpTgt.set(meS.x + Math.cos(camHeading) * 8, 1.05, meS.y + Math.sin(camHeading) * 8); // kafanin baktigi yon
     ovPos.set(Math.cos(ORBIT_A) * ORBIT_R, ORBIT_H, Math.sin(ORBIT_A) * ORBIT_R);
     camera.position.lerpVectors(fpPos, ovPos, blend);
     camTgt.lerpVectors(fpTgt, ovTgt, blend);
