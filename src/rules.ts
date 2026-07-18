@@ -21,8 +21,8 @@ export const SCENE_MS = 5000;
 export const TICK_HZ = 15;
 export const TICK_MS = 1000 / TICK_HZ;
 
-// Kafa donus hizi: aninda degil, yumusak. rad/sn.
-export const TURN_RATE = 2.2;
+// Kafa donus hizi: aninda degil ama akici. rad/sn. (mobilde 2.2 cok agirdi → 4.0)
+export const TURN_RATE = 4.0;
 
 export const halfCone = (): number => (TUNING.coneDeg / 2) * Math.PI / 180;
 

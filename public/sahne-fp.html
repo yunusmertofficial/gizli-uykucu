@@ -8,15 +8,17 @@
   html, body { margin: 0; height: 100%; background: #16161a; overflow: hidden; }
   canvas { display: block; }
   #hud {
-    position: fixed; top: 12px; left: 12px;
-    font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
-    color: #8f8f96; background: rgba(22,22,26,.82);
-    border: 1px solid #2c2c33; border-radius: 6px; padding: 10px 12px;
-    pointer-events: none; min-width: 190px;
+    position: fixed; top: 10px; left: 10px; display: flex; gap: 6px; align-items: center;
+    font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none;
   }
-  #hud b { color: #d8d8dd; font-weight: 500; }
-  #hud .k { color: #d98a5a; }
-  #hud .killer { color: #d4537e; }
+  #hud .pill { background: rgba(22,22,26,.85); border: 1px solid #2c2c33; border-radius: 999px;
+    padding: 6px 11px; color: #b8b8c0; }
+  #hud .pill b { color: #e8e8ee; }
+  #hud .cd { border-radius: 999px; padding: 6px 13px; font-weight: 700; letter-spacing: .3px; }
+  #hud .cd.wait { background: rgba(239,192,90,.14); border: 1px solid rgba(239,192,90,.4); color: #efc05a; }
+  #hud .cd.ready { background: rgba(93,202,165,.14); border: 1px solid rgba(93,202,165,.4); color: #5dcaa5; }
+  #hud .cd.eye { background: rgba(212,83,126,.2); border: 1px solid #d4537e; color: #ff92b2; animation: gu-pulse 1s infinite; }
+  @keyframes gu-pulse { 50% { opacity: .55; } }
   #chat {
     position: fixed; left: 12px; bottom: 12px; z-index: 60; display: none;
     width: min(340px, 62vw);
@@ -362,7 +364,7 @@ function connect(query) {
     const msg = JSON.parse(ev.data);
     if (msg.t === 'state') console.debug('[state]', msg);   // elle sizinti testi
     if (msg.t === 'lobby') showWaiting(msg);                 // oda bekleme salonu
-    else if (msg.t === 'welcome') { hideWaiting(); myId = msg.id; names = msg.names; buildScene(); showChat(true); }
+    else if (msg.t === 'welcome') { hideWaiting(); myId = msg.id; names = msg.names; buildScene(); showChat(true); document.getElementById('hint').style.display = 'none'; }
     else if (msg.t === 'state') ingest(msg);
     else if (msg.t === 'over') { over = { winner: msg.winner, killer: msg.killer }; endRound(); }
     else if (msg.t === 'chat') addChat(msg.from, msg.text, msg.channel);
@@ -643,7 +645,7 @@ addEventListener('pointermove', e => {
   if (!dragging) return;
   movedMax = Math.max(movedMax, Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY));
   if (phase !== 'live' || !myAlive || aimHeading === null) return;
-  aimHeading += (e.clientX - lastX) * 0.006;
+  aimHeading += (e.clientX - lastX) * 0.009;   // mobilde daha hızlı çevir
   lastX = e.clientX;
 });
 addEventListener('keydown', e => { if (e.key === 'Escape') pendingAccuse = -1; });
@@ -760,7 +762,7 @@ function frame(now) {
     for (const p of view.public) {
       const c = chars[p.id]; if (!c) continue;
       // 15Hz state -> 60fps: gelen aciya dogru lerp. Kafa donusu gecikmeye duyarsiz.
-      renderHeading[p.id] = lerpAngle(renderHeading[p.id], p.heading, Math.min(1, dt * 12));
+      renderHeading[p.id] = lerpAngle(renderHeading[p.id], p.heading, Math.min(1, dt * 18));
       c.neck.rotation.y = -renderHeading[p.id];
       c.update(dt);
       const l = p.alive ? p.light : 0;
@@ -850,23 +852,16 @@ function drawLabels() {
 function drawHud() {
   if (myId < 0 || !view) return;
   const aliveN = view.public.filter(p => p.alive).length;
-  const coneNames = view.me.cone.map(i => names[i]).filter(Boolean);
-  const roleTxt = myRole === 'killer'
-    ? `<span class="killer">uykucu (SEN)</span>`
-    : `<span class="k">uyanık</span>`;
-  let s =
-    `<b>${names[myId]}</b> (sen) — ${roleTxt}<br>` +
-    `masada <b>${aliveN}</b> / 7<br>` +
-    `konimde: <b>${coneNames.length ? coneNames.join(', ') : '—'}</b><br>` +
-    `ışığım: <b>${view.public[myId]?.light ?? 0}</b><br>` +
-    `kurşun: <b>${bulletUsed ? 'yandı' : 'hazır'}</b>`;
+  let s = `<div class="pill">masada <b>${aliveN}</b>/7</div>`;
   if (myRole === 'killer') {
-    // İki şartı ayrı göster: bekleme (2. şart) vs göz göze (1. şart).
-    let st;
-    if (cooldown > 0) st = `bekleme <b>${Math.ceil(cooldown / 1000)} sn</b>`;
-    else if (!view.me.eye) st = `<b>HAZIR</b> — kurbanınla göz göze gel`;
-    else st = `<b style="color:#d4537e">GÖZ GÖZE — uyutuluyor…</b>`;
-    s += `<br>${st}`;
+    // Uykucu: sade sayaç — bekleme / HAZIR / GÖZ GÖZE.
+    let cls, txt;
+    if (cooldown > 0) { cls = 'wait'; txt = '⏳ ' + Math.ceil(cooldown / 1000) + ' sn'; }
+    else if (!view.me.eye) { cls = 'ready'; txt = 'HAZIR · göz göze gel'; }
+    else { cls = 'eye'; txt = '◉ GÖZ GÖZE'; }
+    s += `<div class="cd ${cls}">${txt}</div>`;
+  } else if (!bulletUsed) {
+    s += `<div class="pill">🔫 kurşun</div>`;
   }
   hud.innerHTML = s;
 }
