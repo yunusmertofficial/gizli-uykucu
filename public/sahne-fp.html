@@ -535,10 +535,26 @@ function createCharacter(tint) {
   nose.rotation.z = -Math.PI / 2;
   neck.add(nose);
 
+  // Gözler (yüz = +x yönü): beyaz + koyu bebek. Uyurken kapanır, ara sıra kırpar.
+  const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf2f2ec, roughness: 0.5 });
+  const eyePupil = new THREE.MeshStandardMaterial({ color: 0x16161c, roughness: 0.4 });
+  const eyes = [];
+  for (const dz of [-0.095, 0.095]) {
+    const eye = new THREE.Group();
+    const w = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), eyeWhite);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), eyePupil);
+    p.position.x = 0.04;
+    eye.add(w, p);
+    eye.position.set(0.20, 0.28, dz);
+    neck.add(eye);
+    eyes.push(eye);
+  }
+
   return {
-    root, neck, head,
-    _gaze: 0,
+    root, neck, head, eyes,
+    _gaze: 0, _asleep: false, _open: 1, _blinkT: 1 + Math.random() * 3, _blinking: 0,
     setSleeping(v) {
+      this._asleep = v;
       root.rotation.x = v ? 0.42 : 0;
       skin.color.setHex(v ? 0x33333c : tint);
     },
@@ -546,12 +562,22 @@ function createCharacter(tint) {
       skin.emissive.setHex(hex ?? 0x000000);
       skin.emissiveIntensity = hex == null ? 0 : 0.7;
     },
-    playGaze() { this._gaze = 0.55; },
+    playGaze() { this._gaze = 0.55; this._blinking = Math.max(this._blinking, 0.16); }, // uykulu bakış = göz kırpma
     update(dt) {
       if (this._gaze > 0) {
         this._gaze -= dt;
         neck.rotation.z = -Math.sin(Math.max(0, this._gaze) * 5.7) * 0.16;
       } else neck.rotation.z = 0;
+      // Göz açıklığı: uyurken kapalı; canlıyken ara sıra kırpma.
+      let target;
+      if (this._asleep) target = 0.05;
+      else {
+        this._blinkT -= dt;
+        if (this._blinkT <= 0) { this._blinking = 0.13; this._blinkT = 2.5 + Math.random() * 3.5; }
+        if (this._blinking > 0) { this._blinking -= dt; target = 0.1; } else target = 1;
+      }
+      this._open += (target - this._open) * Math.min(1, dt * 22);
+      for (const e of eyes) e.scale.y = this._open;
     }
   };
 }
