@@ -416,15 +416,15 @@ function showRole() {
   const el = document.getElementById('roleReveal');
   const body = myRole === 'killer'
     ? `<div class="big role-killer">SEN UYKUCU'SUN</div>
-       <div class="goal">Kimseyle göz göze gelip onu uyut — ama hamlen gürültüyle aynı görünür,
-       belli etme. <b>4 kişiyi uyut, masayı 3'e indir.</b> Kurşununu asla sıkma; sıkarsan yanarsın.</div>`
+       <div class="goal">Biriyle göz göze gel ve onu uyut. Uyutma anın sıradan bir bakıştan ayırt edilemez —
+       kimse ne yaptığını anlamaz, sen de belli etme. <b>4 kişiyi uyut, masayı 3 kişiye indir</b> ve kazan.</div>`
     : `<div class="big role-awake">SEN UYANIK'SIN</div>
        <div class="goal">Uykucuyu bul. Biri uyumadan önce ona kim uykulu baktı — izle, karşılaştır.
        Emin olunca bir oyuncuya tıklayıp <b>suçla</b>. Doğru bilirsen kazanırsın; yanlışsa sen uyursun.</div>`;
   el.innerHTML = body + `<div class="tap">başlamak için ekrana tıkla</div>`;
   el.style.display = 'flex';
   document.getElementById('hint').innerHTML = myRole === 'killer'
-    ? 'sürükle — bak · bir oyuncuya tıkla — <b>UYUT</b> (göz göze gelince uyur · 45 sn bekleme)'
+    ? 'sürükle — bak · bir oyuncuya tıkla — <b>UYUT</b> (göz göze gelince uyur · 30 sn bekleme)'
     : 'sürükle — bak · oyuncuya tıkla (ona dön) · tekrar tıkla — <b>suçla</b> (kurşun)';
 }
 function hideRole() { roleActive = false; document.getElementById('roleReveal').style.display = 'none'; }
@@ -897,8 +897,7 @@ function drawHud() {
     let cls, txt;
     if (view.me.striking) {
       // Hamle yaptım: kimi uyuttuğum + kaç sn sonra uyuyacağı (5 sn geri sayım).
-      const vp = view.public.find(p => p.id === view.me.striking.victim);
-      const vn = vp ? vp.name : '?';
+      const vn = names[view.me.striking.victim] ?? '?';
       cls = 'strike'; txt = '💤 ' + vn + ' uyuyor · ' + (view.me.striking.ms / 1000).toFixed(1) + ' sn';
     }
     else if (cooldown > 0) { cls = 'wait'; txt = '⏳ ' + Math.ceil(cooldown / 1000) + ' sn'; }

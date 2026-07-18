@@ -5,3 +5,6 @@ _c.mjs
 .DS_Store
 dist/
 android/
+android/key.properties
+*.jks
+*.keystore
