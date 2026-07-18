@@ -289,11 +289,20 @@ wss.on('connection', (ws, req) => {
     let msg: unknown;
     try { msg = JSON.parse(String(data)); } catch { return; }
     if (typeof msg !== 'object' || msg === null) return;
-    const m = msg as { t?: string; h?: number; target?: number; text?: string };
+    const m = msg as { t?: string; h?: number; target?: number; text?: string; role?: string };
 
     // Lobi: yalnız kurucu (index 0) başlatır; boş koltuklar bota dönüşür.
     if (m.t === 'start') {
-      if (!R.started && R.members[0]?.ws === ws) { R.addBots(SEATS - R.count); R.start(); }
+      if (!R.started && R.members[0]?.ws === ws) {
+        const humans = R.members.length;             // botlar henüz eklenmedi
+        R.addBots(SEATS - R.count);
+        let forced: number | null = null;
+        if (humans === 1) {                          // solo pratik: kurucu rolü seçebilir (adil, kimseyi etkilemez)
+          if (m.role === 'killer') forced = 0;                                       // kurucu uykucu
+          else if (m.role === 'awake') forced = 1 + Math.floor(Math.random() * (SEATS - 1)); // bir bot uykucu
+        }
+        R.start(forced);
+      }
       return;
     }
     // id'yi dinamik bul (lobi çıkışları indeksleri kaydırabilir; oyun başlayınca sabit).

@@ -168,6 +168,8 @@
   .wlist { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin: 8px 0; min-height: 30px; }
   .wlist span { background: #22222c; border: 1px solid #34343f; border-radius: 8px;
     padding: 6px 12px; color: #d8d8dd; font-size: 13px; }
+  #homeStep, #nameStep { display: flex; flex-direction: column; gap: 11px; }
+  .stepTitle { color: #e8e8ee; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
   /* Kısa/yatay telefon: kompakt boyutlar (yoksa kart ekrandan taşar) */
   @media (max-height: 560px) {
     .card { padding: 14px 20px; gap: 7px; max-height: calc(100vh - 10px); border-radius: 14px; }
@@ -204,18 +206,18 @@
   <div class="brand"><span class="eye">◉</span><h1>GİZLİ UYKUCU</h1></div>
   <div class="sub">Biri gizli uykucu. Kime baktığın herkese açık — baktığın kadar görürsün. Uykucu masayı 3'e indirmeden onu bul.</div>
   <div class="scorepill">toplam puan <b id="lobbyScore">0</b></div>
-  <input id="nameInput" class="gu-input" placeholder="adın" maxlength="16">
-  <button id="startBtn" class="gu-btn primary">🤖 Botlarla Başla</button>
-  <div class="roleSel" id="roleSel">
-    <button data-r="random" class="on">rastgele</button>
-    <button data-r="killer">uykucu ol</button>
-    <button data-r="awake">uyanık ol</button>
+  <!-- adım 1: ana seçim -->
+  <div id="homeStep">
+    <button id="createBtn" class="gu-btn primary">➕ Oda Kur</button>
+    <button id="joinBtn" class="gu-btn">🔑 Odaya Katıl</button>
   </div>
-  <div class="divider">ya da arkadaşlarla</div>
-  <button id="createBtn" class="gu-btn">➕ Oda Kur</button>
-  <div class="joinRow">
-    <input id="codeInput" class="gu-input" placeholder="oda kodu" maxlength="6" inputmode="numeric">
-    <button id="joinBtn" class="gu-btn">🔑 Katıl</button>
+  <!-- adım 2: isim (zorunlu) + gerekirse oda kodu -->
+  <div id="nameStep" style="display:none">
+    <div class="stepTitle" id="stepTitle">Oda Kur</div>
+    <input id="nameInput" class="gu-input" placeholder="adın (zorunlu)" maxlength="16" autocomplete="off">
+    <input id="codeInput" class="gu-input" placeholder="oda kodu" maxlength="6" inputmode="numeric" autocomplete="off" style="display:none">
+    <button id="confirmBtn" class="gu-btn primary">Devam →</button>
+    <button id="backBtn" class="gu-btn ghost">← geri</button>
   </div>
   <div id="lobbyMsg" class="err"></div>
   <div class="foot">botlar boş koltukları doldurur · ideal 6-7 kişi</div>
@@ -226,6 +228,11 @@
   <div class="sub">arkadaşlarına ver — katılınca aşağıda görünür</div>
   <div id="wPlayers" class="wlist"></div>
   <div id="wCount" class="foot"></div>
+  <div class="roleSel" id="roleSel" style="display:none">
+    <button data-r="random" class="on">rastgele</button>
+    <button data-r="killer">uykucu ol</button>
+    <button data-r="awake">uyanık ol</button>
+  </div>
   <button id="wStart" class="gu-btn primary">▶ Başla</button>
   <div id="wWait" class="foot">kurucunun başlatması bekleniyor…</div>
   <button id="wBack" class="gu-btn ghost">← geri</button>
@@ -906,7 +913,6 @@ const quitBtn = document.getElementById('quit');
 quitBtn.addEventListener('pointerup', e => e.stopPropagation());  // suçlama/uyut tetiklenmesin
 quitBtn.addEventListener('click', quitGame);
 
-function playerName() { return (nameInput.value.trim() || 'Sen').slice(0, 16); }
 function go(query) { SND.unlock(); SND.click(); lobbyEl.style.display = 'none'; lobbyMsg.textContent = ''; connect(query); }
 
 // Ses aç/kapa (köşe düğmesi)
@@ -916,25 +922,52 @@ muteBtn.addEventListener('pointerup', e => e.stopPropagation());
 muteBtn.addEventListener('click', () => { SND.unlock(); SND.toggleMute(); refreshMute(); });
 refreshMute();
 
-// Bots modunda rol seçimi (odalarda rastgele kalır).
+// ---- Lobi: 2 adım. Adım 1 = Oda Kur / Katıl. Adım 2 = isim (ZORUNLU) [+ oda kodu]. ----
+const homeStep = document.getElementById('homeStep');
+const nameStep = document.getElementById('nameStep');
+const stepTitle = document.getElementById('stepTitle');
+const codeInput = document.getElementById('codeInput');
+const confirmBtn = document.getElementById('confirmBtn');
+let mode = 'create';
+
+function toStep2(m) {
+  SND.unlock(); SND.click();
+  mode = m;
+  stepTitle.textContent = m === 'create' ? 'Oda Kur' : 'Odaya Katıl';
+  codeInput.style.display = m === 'join' ? 'block' : 'none';
+  homeStep.style.display = 'none';
+  nameStep.style.display = 'flex';
+  lobbyMsg.textContent = '';
+  setTimeout(() => nameInput.focus(), 50);
+}
+function toHome() { nameStep.style.display = 'none'; homeStep.style.display = 'flex'; lobbyMsg.textContent = ''; }
+
+document.getElementById('createBtn').onclick = () => toStep2('create');
+document.getElementById('joinBtn').onclick = () => toStep2('join');
+document.getElementById('backBtn').onclick = toHome;
+confirmBtn.onclick = () => {
+  const nm = nameInput.value.trim().slice(0, 16);
+  if (!nm) { lobbyMsg.textContent = 'adını gir (zorunlu).'; nameInput.focus(); return; }
+  const q = `&name=${encodeURIComponent(nm)}`;
+  if (mode === 'create') { go(`?create=1${q}`); }
+  else {
+    const code = codeInput.value.trim();
+    if (!/^\d{6}$/.test(code)) { lobbyMsg.textContent = '6 haneli oda kodu gir.'; codeInput.focus(); return; }
+    go(`?room=${code}${q}`);
+  }
+};
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmBtn.click(); });
+codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmBtn.click(); });
+
+// ---- Bekleme salonu: rol seçimi (yalnız solo kurucuya; botla oynarken uygulanır) + Başla ----
 let botRole = 'random';
 const roleSel = document.getElementById('roleSel');
 roleSel.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  SND.unlock(); SND.click(); botRole = b.dataset.r;
+  SND.click(); botRole = b.dataset.r;
   roleSel.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
 });
-document.getElementById('startBtn').onclick = () =>
-  go(`?bots=6&role=${botRole}&name=${encodeURIComponent(playerName())}`);
-document.getElementById('createBtn').onclick = () => go(`?create=1&name=${encodeURIComponent(playerName())}`);
-document.getElementById('joinBtn').onclick = () => {
-  const code = document.getElementById('codeInput').value.trim();
-  if (!/^\d{6}$/.test(code)) { lobbyMsg.textContent = '6 haneli oda kodu gir.'; return; }
-  go(`?room=${code}&name=${encodeURIComponent(playerName())}`);
-};
-
-// ---- Bekleme salonu (oda kur / katıl) ----
-document.getElementById('wStart').onclick = () => { SND.click(); send({ t: 'start' }); };
+document.getElementById('wStart').onclick = () => { SND.click(); send({ t: 'start', role: botRole }); };
 document.getElementById('wBack').onclick = () => location.reload();
 
 function showWaiting(msg) {
@@ -950,6 +983,7 @@ function showWaiting(msg) {
     `${msg.count} / ${msg.max} kişi` + (msg.count < 6 ? ' · boş koltukları bot doldurur' : '');
   document.getElementById('wStart').style.display = msg.host ? 'block' : 'none';
   document.getElementById('wWait').style.display = msg.host ? 'none' : 'block';
+  roleSel.style.display = (msg.host && msg.count <= 1) ? 'flex' : 'none';  // solo kurucu rol seçebilir
 }
 function hideWaiting() { waitingEl.style.display = 'none'; quitBtn.style.display = 'block'; SND.ambient(false); }
 function backToLobby(err) {
@@ -979,12 +1013,12 @@ addEventListener('pointerdown', () => { SND.unlock(); if (!SND.muted() && onMenu
 // Paylaşılan bağlantı: URL'de ?room=KOD varsa doğrudan odaya katıl (mobilde link paylaş).
 const _params = new URLSearchParams(location.search);
 const urlRoom = _params.get('room');
-if (urlRoom && /^\d{6}$/.test(urlRoom)) {
+lobbyEl.style.display = 'flex';
+if (urlRoom && /^\d{6}$/.test(urlRoom)) {                       // paylaşılan link: kod dolu, isim iste
   const urlName = _params.get('name');
-  if (urlName) nameInput.value = urlName.slice(0, 16);          // linkteki adı kullan
-  go(`?room=${urlRoom}&name=${encodeURIComponent(playerName())}`);
-} else {
-  lobbyEl.style.display = 'flex';
+  if (urlName) nameInput.value = urlName.slice(0, 16);
+  codeInput.value = urlRoom;
+  toStep2('join');
 }
 </script>
 </body>
