@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Gizli Uykucu — 3D sahne iskeleti</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #16161a; overflow: hidden; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 12px; left: 12px;
+    font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    color: #8f8f96; background: rgba(22,22,26,.82);
+    border: 1px solid #2c2c33; border-radius: 6px; padding: 10px 12px;
+    pointer-events: none; min-width: 190px;
+  }
+  #hud b { color: #d8d8dd; font-weight: 500; }
+  #hud .k { color: #d98a5a; }
+  #log {
+    position: fixed; bottom: 12px; left: 12px;
+    font: 12px/1.7 ui-monospace, Menlo, monospace; color: #6e6e76;
+    pointer-events: none;
+  }
+  #hint {
+    position: fixed; bottom: 12px; right: 12px;
+    font: 11px/1.6 ui-monospace, Menlo, monospace; color: #4a4a52;
+    pointer-events: none; text-align: right;
+  }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="log"></div>
+<div id="hint">fare — kafanı çevir<br>sürükle — kamerayı döndür</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// =====================================================================
+//  KURALLAR — rules.js ile birebir aynı matematik.
+//  Gerçek projede bunu import edeceksin, burada tek dosya olsun diye kopya.
+// =====================================================================
+const TAU = Math.PI * 2;
+const TUNING = { coneDeg: 110, noiseMs: 6000, cooldownMs: 45000, winThreshold: 3 };
+const KILL_DELAY_MS = 5000, TURN_RATE = 2.2;
+const halfCone = () => (TUNING.coneDeg / 2) * Math.PI / 180;
+const angleDiff = (a, b) => Math.abs(((a - b + Math.PI) % TAU + TAU) % TAU - Math.PI);
+const sees = (a, b) => angleDiff(a.heading, Math.atan2(b.y - a.y, b.x - a.x)) < halfCone();
+const eyeContact = (a, b) => sees(a, b) && sees(b, a);
+const lightLevel = (t, ps) => ps.filter(p => p !== t && p.alive && sees(p, t)).length;
+function stepHeading(cur, tgt, dt) {
+  const d = ((tgt - cur + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  const m = TURN_RATE * dt;
+  return Math.abs(d) <= m ? tgt : cur + Math.sign(d) * m;
+}
+
+// =====================================================================
+//  OYUN — game.js'in kısaltılmış hali. Ekranı tanımıyor.
+// =====================================================================
+const NAMES = ['Ali', 'Ece', 'Can', 'Deniz', 'Zeynep', 'Burak', 'Mert'];
+const R_SEAT = 4.2;
+
+const players = NAMES.map((name, i) => {
+  const a = Math.PI / 2 + (i / NAMES.length) * TAU;
+  const x = Math.cos(a) * R_SEAT, y = Math.sin(a) * R_SEAT;
+  const face = Math.atan2(-y, -x);
+  return { id: i, name, x, y, heading: face, target: face, alive: true,
+           role: 'awake', noiseIn: Math.random() * TUNING.noiseMs, next: 0 };
+});
+players[1 + Math.floor(Math.random() * 6)].role = 'killer';   // sen (0) hiç uykucu olma
+const ME = players[0];
+const killer = players.find(p => p.role === 'killer');
+let cooldown = 0, pending = [], gazeQueue = [], logLines = [];
+const alive = () => players.filter(p => p.alive);
+
+function tick(dtMs) {
+  const dt = dtMs / 1000, events = [];
+
+  // Botlar
+  for (const p of alive()) {
+    if (p === ME) continue;
+    if (p.role === 'killer') {
+      const opts = alive().filter(x => x !== p);
+      if (!p.prey || !p.prey.alive) p.prey = opts[Math.floor(Math.random() * opts.length)];
+      p.target = Math.atan2(p.prey.y - p.y, p.prey.x - p.x);
+      if (cooldown <= 0 && eyeContact(p, p.prey) && !pending.some(s => s.victim === p.prey.id)) {
+        cooldown = TUNING.cooldownMs;
+        pending.push({ victim: p.prey.id, ms: KILL_DELAY_MS });
+        gazeQueue.push(p.id);            // gürültüyle aynı kuyruk — ayırt edilemez
+        p.prey = null;
+      }
+    } else {
+      p.next -= dtMs;
+      if (p.next <= 0) {
+        p.next = 2000 + Math.random() * 4000;
+        const o = alive().filter(x => x !== p);
+        const t = o[Math.floor(Math.random() * o.length)];
+        if (t) p.target = Math.atan2(t.y - p.y, t.x - p.x);
+      }
+    }
+  }
+
+  // FAZ A — bütün açılar yerleşir
+  for (const p of alive()) {
+    p.heading = stepHeading(p.heading, p.target, dt);
+    p.noiseIn -= dtMs;
+    if (p.noiseIn <= 0) { p.noiseIn = TUNING.noiseMs * (0.6 + Math.random() * 0.8); gazeQueue.push(p.id); }
+  }
+
+  // FAZ B — açılar yerleştikten SONRA olaylar. Tanık listesi ancak burada doğru.
+  for (const id of gazeQueue) {
+    const p = players[id];
+    const witnesses = players.filter(w => w.alive && w !== p && sees(w, p)).map(w => w.id);
+    events.push({ t: 'gaze', actor: id, witnesses });
+  }
+  gazeQueue = [];
+
+  if (cooldown > 0) cooldown -= dtMs;
+  for (const s of [...pending]) {
+    s.ms -= dtMs;
+    if (s.ms <= 0) {
+      pending.splice(pending.indexOf(s), 1);
+      players[s.victim].alive = false;
+      events.push({ t: 'sleep', victim: s.victim });
+      logLines.push(players[s.victim].name + ' uyudu');
+    }
+  }
+  return events;
+}
+
+// FİLTRE — tek gizleme noktası. witnesses listesi buradan öteye geçmez.
+function viewFor(me, events) {
+  return events.filter(e => e.t !== 'gaze' || e.witnesses.includes(me.id))
+               .map(e => e.t === 'gaze' ? { t: 'gaze', actor: e.actor } : e);
+}
+
+// =====================================================================
+//  SAHNE
+// =====================================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16161a);
+scene.fog = new THREE.Fog(0x16161a, 14, 26);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x9aa4bb, 0x201a16, 0.75));
+const key = new THREE.DirectionalLight(0xfff0dd, 0.85);
+key.position.set(4, 9, 3);
+scene.add(key);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(13, 64),
+  new THREE.MeshStandardMaterial({ color: 0x22222a, roughness: 1 })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const table = new THREE.Group();
+table.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(3, 3, 0.16, 64),
+  new THREE.MeshStandardMaterial({ color: 0x3b3b45, roughness: 0.85 })
+));
+table.children[0].position.y = 1.0;
+const base = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.5, 0.9, 1.0, 24),
+  new THREE.MeshStandardMaterial({ color: 0x2e2e36, roughness: 1 })
+);
+base.position.y = 0.5;
+table.add(base);
+scene.add(table);
+
+// =====================================================================
+//  SOKET — karakter fabrikası.
+//
+//  BUGÜN: silindir + küre. Sıfır lira.
+//  YARIN: glTF yükle, boyun kemiğini bul, AYNI arayüzü döndür:
+//         { root, neck, setSleeping, playGaze }
+//  Aşağıdaki render döngüsü bu dört şeyden başka hiçbir şey bilmiyor.
+//  Yani dobermanı taktığında bu dosyanın geri kalanı değişmez.
+// =====================================================================
+function createCharacter(tint) {
+  const root = new THREE.Group();
+
+  const skin = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.75 });
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.95, 20), skin);
+  torso.position.y = 1.42;
+  root.add(torso);
+
+  // Boyun kemiği. glTF'te bu, skeleton'dan bulacağın gerçek bone olacak.
+  const neck = new THREE.Group();
+  neck.position.y = 1.95;
+  root.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16), skin);
+  head.position.y = 0.2;
+  neck.add(head);
+
+  // Yön işareti: +X yönünde. Karakterin "önü" bu.
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.065, 0.22, 12),
+    new THREE.MeshStandardMaterial({ color: 0xd98a5a, roughness: 0.6 })
+  );
+  nose.position.set(0.26, 0.2, 0);
+  nose.rotation.z = -Math.PI / 2;
+  neck.add(nose);
+
+  return {
+    root, neck,
+    setSleeping(v) {
+      root.rotation.x = v ? 0.42 : 0;        // öne çöker
+      skin.color.setHex(v ? 0x33333c : tint);
+      skin.opacity = 1;
+    },
+    playGaze() { this._gaze = 0.55; },       // glTF'te: yawnClip.reset().play()
+    update(dt) {
+      if (this._gaze > 0) {
+        this._gaze -= dt;
+        neck.rotation.z = -Math.sin(Math.max(0, this._gaze) * 5.7) * 0.16;  // baş düşer
+      } else neck.rotation.z = 0;
+    }
+  };
+}
+
+const TINTS = [0x7f77dd, 0x5dcaa5, 0xd85a30, 0xd4537e, 0x378add, 0xba7517, 0x888780];
+const chars = players.map((p, i) => {
+  const c = createCharacter(TINTS[i]);
+  c.root.position.set(p.x, 0, p.y);          // oyun (x,y) -> sahne (x,z)
+  scene.add(c.root);
+
+  // Işık halkası: kaç kişinin konisindesin.
+  c.ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.52, 0.68, 32),
+    new THREE.MeshBasicMaterial({ color: 0xefa027, transparent: true, opacity: 0, side: 2 })
+  );
+  c.ring.rotation.x = -Math.PI / 2;
+  c.ring.position.set(p.x, 0.03, p.y);
+  scene.add(c.ring);
+
+  const chair = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.9, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x2a2a32, roughness: 1 })
+  );
+  chair.position.set(p.x * 1.16, 0.45, p.y * 1.16);
+  scene.add(chair);
+  return c;
+});
+
+// Kendi konin. Sadece senin. Kimsenin konisini göremezsin.
+const coneGroup = new THREE.Group();
+const coneMesh = new THREE.Mesh(
+  new THREE.CircleGeometry(9, 40, -halfCone(), halfCone() * 2),
+  new THREE.MeshBasicMaterial({ color: 0x5dcaa5, transparent: true, opacity: 0.1, side: 2 })
+);
+coneMesh.rotation.x = -Math.PI / 2;
+coneGroup.add(coneMesh);
+coneGroup.position.set(ME.x, 0.04, ME.y);
+scene.add(coneGroup);
+
+// =====================================================================
+//  KAMERA + GİRDİ
+// =====================================================================
+let camA = -Math.PI / 2, camH = 7.5, camR = 10, drag = null;
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const hit = new THREE.Vector3();
+
+renderer.domElement.addEventListener('pointerdown', e => drag = { x: e.clientX, a: camA });
+addEventListener('pointerup', () => drag = null);
+addEventListener('pointermove', e => {
+  if (drag) { camA = drag.a + (e.clientX - drag.x) * 0.008; return; }
+  // Kafanı çevir: fareyi zemine ışınla, oraya bak.
+  ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (ray.ray.intersectPlane(plane, hit) && ME.alive)
+    ME.target = Math.atan2(hit.z - ME.y, hit.x - ME.x);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// =====================================================================
+//  DÖNGÜ — state paketi geliyor, sahne onu çiziyor. Tek yön.
+// =====================================================================
+const hud = document.getElementById('hud'), logEl = document.getElementById('log');
+let last = performance.now(), acc = 0;
+const TICK = 1000 / 15;
+
+function frame(now) {
+  const dtMs = Math.min(now - last, 100); last = now;
+  const dt = dtMs / 1000;
+  acc += dtMs;
+
+  while (acc >= TICK) {
+    acc -= TICK;
+    const events = tick(TICK);
+    for (const e of viewFor(ME, events)) {       // <- sadece filtrelenmiş olaylar
+      if (e.t === 'gaze') chars[e.actor].playGaze();
+      if (e.t === 'sleep') chars[e.victim].setSleeping(true);
+    }
+  }
+
+  players.forEach((p, i) => {
+    const c = chars[i];
+    // ==========  İŞTE O TEK SATIR  ==========
+    c.neck.rotation.y = -p.heading;
+    // ========================================
+    c.update(dt);
+    const l = p.alive ? lightLevel(p, players) : 0;
+    c.ring.material.opacity += (Math.min(l / 3, 1) * 0.75 - c.ring.material.opacity) * dt * 6;
+  });
+
+  coneGroup.rotation.y = -ME.heading;
+  coneGroup.visible = ME.alive;
+
+  camera.position.set(Math.cos(camA) * camR, camH, Math.sin(camA) * camR);
+  camera.lookAt(0, 1.2, 0);
+
+  const inCone = players.filter(p => p !== ME && p.alive && sees(ME, p)).map(p => p.name);
+  hud.innerHTML =
+    `<b>${ME.name}</b> (sen) — <span class="k">uyanık</span><br>` +
+    `masada <b>${alive().length}</b> / 7<br>` +
+    `konimde: <b>${inCone.length ? inCone.join(', ') : '—'}</b><br>` +
+    `ışığım: <b>${lightLevel(ME, players)}</b>`;
+  logEl.innerHTML = logLines.slice(-4).join('<br>');
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

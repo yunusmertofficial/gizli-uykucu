@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Gizli Uykucu — 3D sahne (ağ bağlı)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #16161a; overflow: hidden; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 12px; left: 12px;
+    font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    color: #8f8f96; background: rgba(22,22,26,.82);
+    border: 1px solid #2c2c33; border-radius: 6px; padding: 10px 12px;
+    pointer-events: none; min-width: 190px;
+  }
+  #hud b { color: #d8d8dd; font-weight: 500; }
+  #hud .k { color: #d98a5a; }
+  #hud .killer { color: #d4537e; }
+  #chat {
+    position: fixed; left: 12px; bottom: 12px; z-index: 60; display: none;
+    width: min(340px, 62vw);
+  }
+  #chatLog {
+    display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px;
+    font: 12px/1.35 ui-monospace, Menlo, monospace; pointer-events: none;
+  }
+  #chatLog .m { background: rgba(20,20,24,.72); border: 1px solid #2c2c33; border-radius: 6px;
+    padding: 4px 8px; color: #d8d8dd; align-self: flex-start; max-width: 100%; word-break: break-word; }
+  #chatLog .m b { color: #5dcaa5; }
+  #chatLog .m.dead b { color: #b06a9a; }
+  #chatLog .m.sys { background: none; border: none; padding: 2px 4px; color: #6e6e76; }
+  #chatInput {
+    width: 100%; box-sizing: border-box;
+    font: 13px/1 ui-monospace, Menlo, monospace; color: #e8e8ee;
+    background: rgba(16,16,21,.9); border: 1px solid #2f2f3a; border-radius: 8px; padding: 9px 11px;
+  }
+  #chatInput:focus { outline: none; border-color: #5dcaa5; }
+  #hint {
+    position: fixed; bottom: 12px; right: 12px;
+    font: 11px/1.6 ui-monospace, Menlo, monospace; color: #4a4a52;
+    pointer-events: none; text-align: right;
+  }
+  #quit {
+    position: fixed; top: 12px; right: 12px; display: none; z-index: 70;
+    font: 12px/1 ui-monospace, Menlo, monospace; color: #b8b8c0;
+    background: rgba(40,26,32,.85); border: 1px solid #5a3240;
+    border-radius: 6px; padding: 8px 12px; cursor: pointer;
+  }
+  #quit:hover { color: #fff; border-color: #d4537e; }
+  #mute {
+    position: fixed; top: 12px; right: 78px; z-index: 101;
+    font-size: 15px; line-height: 1; color: #b8b8c0;
+    background: rgba(22,22,26,.85); border: 1px solid #2c2c33;
+    border-radius: 6px; padding: 8px 10px; cursor: pointer;
+  }
+  #mute:hover { color: #fff; border-color: #5dcaa5; }
+  #rotate {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    background: #101014; color: #e8e8ee; text-align: center; padding: 24px;
+    font-size: 52px;                    /* 📱 büyük */
+  }
+  #rotate div { font: 18px/1.4 ui-monospace, Menlo, monospace; }
+  #rotate small { font: 13px/1.4 ui-monospace, Menlo, monospace; color: #8f8f96; }
+  #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .label {
+    position: absolute; transform: translate(-50%, -120%);
+    font: 12px/1 ui-monospace, Menlo, monospace; color: #e8e8ee;
+    background: rgba(20,20,24,.72); border: 1px solid #3a3a44;
+    border-radius: 4px; padding: 3px 7px; white-space: nowrap;
+  }
+  .label .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 5px; vertical-align: middle; }
+  .label.dead { color: #6a6a72; opacity: .6; }
+  .label.dead .name { text-decoration: line-through; }
+  .label.target { color: #fff; background: #7a2540; border-color: #d4537e; }
+  .label.accuser { color: #fff; background: #1f4e9b; border-color: #3a86ff; }
+  #banner {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    font: 26px/1.4 ui-monospace, Menlo, monospace; color: #e8e8ee;
+    background: rgba(10,10,12,.4); pointer-events: none; text-align: center;
+  }
+  #banner small { display: block; margin-top: 10px; font-size: 14px; color: #9a9aa2; }
+  /* ---- tam ekran katmanlar ---- */
+  #roleReveal, #over, #lobby, #waiting {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 4px;
+    text-align: center; font: 15px/1.5 ui-monospace, Menlo, monospace; color: #e8e8ee; padding: 20px;
+  }
+  #roleReveal { z-index: 80; pointer-events: none; background: rgba(8,8,10,.72); }
+  #over { z-index: 90; pointer-events: auto; background: rgba(8,8,10,.62); }
+  #roleReveal .big, #over .big { font-size: 32px; font-weight: 600; letter-spacing: 1px; margin-bottom: 6px; }
+  #roleReveal .goal, #over .info { color: #b8b8c0; max-width: 460px; }
+  .role-killer { color: #d4537e; } .role-awake { color: #5dcaa5; }
+  #roleReveal .tap { margin-top: 22px; color: #8f8f96; font-size: 13px; }
+  #over .pts { font-size: 19px; margin: 14px 0 2px; color: #efc05a; }
+  #over .total { color: #9a9aa2; margin-bottom: 18px; }
+
+  /* ---- MODERN LOBİ + BEKLEME SALONU ---- */
+  #lobby, #waiting {
+    z-index: 100; pointer-events: auto; overflow: hidden;
+    background:
+      radial-gradient(1100px 560px at 50% -8%, rgba(93,202,165,.10), transparent 60%),
+      radial-gradient(900px 520px at 50% 118%, rgba(212,83,126,.09), transparent 60%),
+      #0b0b0f;
+  }
+  #lobby::before, #waiting::before {           /* dönen "dikkat konisi" taraması */
+    content: ''; position: absolute; width: 170vmax; height: 170vmax; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    background: conic-gradient(from 0deg, transparent 0deg, rgba(93,202,165,.05) 16deg, transparent 44deg);
+    animation: gu-sweep 17s linear infinite; pointer-events: none;
+  }
+  @keyframes gu-sweep { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  .card {
+    position: relative; z-index: 1; width: min(400px, 92vw); box-sizing: border-box;
+    background: rgba(21,21,27,.74); border: 1px solid #2a2a34; border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.045);
+    backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
+    padding: 30px 26px; display: flex; flex-direction: column; gap: 12px; text-align: center;
+  }
+  .brand { display: flex; align-items: center; justify-content: center; gap: 12px; }
+  .brand .eye { font-size: 24px; color: #5dcaa5; text-shadow: 0 0 18px rgba(93,202,165,.6);
+    animation: gu-blink 5s infinite; }
+  @keyframes gu-blink { 0%,92%,100% { opacity: 1; } 95% { opacity: .2; } }
+  .card h1 { margin: 0; font: 700 23px/1 ui-monospace, Menlo, monospace; letter-spacing: 3px; color: #f0f0f4; }
+  .card .sub { color: #83838d; font-size: 12.5px; line-height: 1.55; margin: -2px 0 4px; }
+  .scorepill { align-self: center; background: rgba(239,192,90,.12); border: 1px solid rgba(239,192,90,.32);
+    color: #efc05a; border-radius: 999px; padding: 6px 14px; font-size: 11.5px; letter-spacing: .5px; }
+  .scorepill b { font-size: 14px; margin-left: 5px; }
+  .gu-input {
+    font: 14px/1 ui-monospace, Menlo, monospace; color: #e8e8ee;
+    background: #101015; border: 1px solid #2f2f3a; border-radius: 10px;
+    padding: 12px 14px; text-align: center; width: 100%; box-sizing: border-box;
+  }
+  .gu-input:focus { outline: none; border-color: #5dcaa5; box-shadow: 0 0 0 3px rgba(93,202,165,.14); }
+  .gu-input::placeholder { color: #55555f; }
+  button.gu-btn {
+    font: 600 14px/1 ui-monospace, Menlo, monospace; color: #e8e8ee;
+    background: #24242e; border: 1px solid #34343f; border-radius: 10px; padding: 13px 16px;
+    cursor: pointer; transition: transform .06s ease, background .15s, border-color .15s;
+  }
+  button.gu-btn:hover { background: #2e2e3a; transform: translateY(-1px); }
+  button.gu-btn:active { transform: translateY(0); }
+  button.gu-btn.primary { background: linear-gradient(180deg, #63d3ab, #49bd93); color: #08120e;
+    border: 0; font-weight: 700; box-shadow: 0 6px 20px rgba(75,191,149,.25); }
+  button.gu-btn.primary:hover { background: linear-gradient(180deg, #70e0b8, #52caa0); }
+  button.gu-btn.ghost { background: transparent; border-color: #30303a; color: #9a9aa4; }
+  .divider { display: flex; align-items: center; gap: 10px; color: #55555f; font-size: 11px; margin: 3px 0; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #26262f; }
+  .joinRow { display: flex; gap: 8px; }
+  .joinRow .gu-input { flex: 1; }
+  .joinRow .gu-btn { white-space: nowrap; }
+  .err { color: #e0698c; font-size: 12px; min-height: 14px; }
+  .foot { color: #55555f; font-size: 11.5px; }
+  .wlabel { color: #83838d; font-size: 11px; letter-spacing: 3px; }
+  .wcode { font: 700 40px/1.1 ui-monospace, Menlo, monospace; letter-spacing: 8px; color: #efc05a;
+    text-shadow: 0 0 22px rgba(239,192,90,.35); margin: 2px 0 4px; padding-left: 8px; }
+  .wlist { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin: 8px 0; min-height: 30px; }
+  .wlist span { background: #22222c; border: 1px solid #34343f; border-radius: 8px;
+    padding: 6px 12px; color: #d8d8dd; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="chat"><div id="chatLog"></div><input id="chatInput" placeholder="mesaj yaz… (Enter)" maxlength="200" autocomplete="off"></div>
+<div id="hint">sürükle — etrafına bak · oyuncuya tıkla (ona dön) · tekrar tıkla — suçla (kurşun)</div>
+<div id="labels"></div>
+<div id="rotate">📱<div>telefonu yatay çevir</div><small>oyun yatay oynanır (görüş konisi geniştir)</small></div>
+<button id="mute">🔊</button>
+<button id="quit">✕ çık</button>
+<div id="banner"></div>
+<div id="roleReveal"></div>
+<div id="over"></div>
+<div id="lobby"><div class="card">
+  <div class="brand"><span class="eye">◉</span><h1>GİZLİ UYKUCU</h1></div>
+  <div class="sub">Biri gizli uykucu. Kime baktığın herkese açık — baktığın kadar görürsün. Uykucu masayı 3'e indirmeden onu bul.</div>
+  <div class="scorepill">toplam puan <b id="lobbyScore">0</b></div>
+  <input id="nameInput" class="gu-input" placeholder="adın" maxlength="16">
+  <button id="startBtn" class="gu-btn primary">🤖 Botlarla Başla</button>
+  <div class="divider">ya da arkadaşlarla</div>
+  <button id="createBtn" class="gu-btn">➕ Oda Kur</button>
+  <div class="joinRow">
+    <input id="codeInput" class="gu-input" placeholder="oda kodu" maxlength="6" inputmode="numeric">
+    <button id="joinBtn" class="gu-btn">🔑 Katıl</button>
+  </div>
+  <div id="lobbyMsg" class="err"></div>
+  <div class="foot">botlar boş koltukları doldurur · ideal 6-7 kişi</div>
+</div></div>
+<div id="waiting"><div class="card">
+  <div class="wlabel">ODA KODU</div>
+  <div class="wcode" id="wCode">------</div>
+  <div class="sub">arkadaşlarına ver — katılınca aşağıda görünür</div>
+  <div id="wPlayers" class="wlist"></div>
+  <div id="wCount" class="foot"></div>
+  <button id="wStart" class="gu-btn primary">▶ Başla</button>
+  <div id="wWait" class="foot">kurucunun başlatması bekleniyor…</div>
+  <button id="wBack" class="gu-btn ghost">← geri</button>
+</div></div>
+
+<script type="module">
+// ESM + modül kapsam: "const top" gibi global gölgeleme imkansiz (PLAN'daki tuzak).
+// Yerele gömülü (CDN değil) — native pakette internet-bağımsız çalışsın, Play Store'a uygun.
+import * as THREE from './vendor/three.module.js';
+
+// =====================================================================
+//  BU DOSYA OYUN MANTIGI CALISTIRMAZ. Tahmin yok, simulasyon yok, gurultu yok.
+//  Sunucudan gelen 'state' paketini alir ve cizer. Tek yon.
+//  (game.js'in eski kopyasi, tick/viewFor/botlar SILINDI.)
+// =====================================================================
+
+const CONE_DEG = 110;                       // sadece koni gorselini cizmek icin (kozmetik)
+const halfCone = () => (CONE_DEG / 2) * Math.PI / 180;
+const R_SEAT = 4.2;
+const N = 7;
+const TAU = Math.PI * 2;
+
+// Koltuk acilari server'daki seatPositions ile AYNI formul (olcek onemsiz, aci onemli).
+const seatXY = Array.from({ length: N }, (_, i) => {
+  const a = Math.PI / 2 + (i / N) * TAU;
+  return { x: Math.cos(a) * R_SEAT, y: Math.sin(a) * R_SEAT };
+});
+
+// ---- durum (yalniz sunucudan) ----
+let myId = -1;
+let names = [];
+let view = null;                            // en son 'state' paketi
+let phase = 'live';
+let myRole = 'awake', myAlive = true, bulletUsed = false, cooldown = 0;
+let sceneInfo = null;                       // { accuser, target, t0, result }
+let over = null;                            // { winner, killer }
+
+// =====================================================================
+//  SOKET + LOBİ  (bağlantı "Başla" ile kurulur, sayfa açılınca değil)
+// =====================================================================
+// Sunucu adresi: web'de (sunucu tarafından servis edilir) location.host yeterli.
+// Native pakette (Capacitor) window.GU_WS'i Coolify adresine ayarla: örn "wss://gizli.alanadi.com".
+const wsBase = window.GU_WS || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+let ws = null;
+let roleShown = false;
+let roleActive = false;                       // rol ekranı açıkken tıklama = kapat (suçlama değil)
+let myAccuseTarget = -1;                      // insanin suçladigi hedef (kahraman bonusu)
+let score = Number(localStorage.getItem('gu_score') || 0);
+let prevCooldown = 0;
+
+// =====================================================================
+//  SES — prosedürel Web Audio. Dosya yok, sızıntı yok: yalnız istemcinin
+//  (zaten filtrelenmiş) verisinden tetiklenir. Tur içi kısa SFX; müzik lobide.
+// =====================================================================
+const SND = (() => {
+  let ac = null, master = null, ambient = null, arp = null;
+  let muted = localStorage.getItem('gu_muted') === '1';
+  function ensure() {
+    if (!ac) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ac = new AC();
+      master = ac.createGain(); master.gain.value = 0.5; master.connect(ac.destination);
+    }
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+  function tone(freq, { type = 'sine', dur = 0.15, gain = 0.2, attack = 0.006, to = null, delay = 0 } = {}) {
+    if (muted || !ensure()) return;
+    const t0 = ac.currentTime + delay;
+    const o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (to) o.frequency.exponentialRampToValueAtTime(to, t0 + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function chord(freqs, opts = {}) { freqs.forEach((f, i) => tone(f, { ...opts, delay: (opts.stagger || 0) * i })); }
+  return {
+    unlock() { ensure(); },
+    muted() { return muted; },
+    toggleMute() { muted = !muted; localStorage.setItem('gu_muted', muted ? '1' : '0'); if (muted) this.ambient(false); return muted; },
+    // Lobi/bekleme atmosferi: alçak, yavaş nefes alan pad (müzik dosyası sonra eklenebilir).
+    ambient(on) {
+      if (!on) {
+        if (arp) { clearInterval(arp); arp = null; }
+        if (ambient) { const n = ac.currentTime; ambient.forEach(x => { try { x.g.gain.linearRampToValueAtTime(0, n + 1); if (x.o) x.o.stop(n + 1.1); } catch (e) {} }); ambient = null; }
+        return;
+      }
+      if (muted || ambient || !ensure()) return;
+      const n = ac.currentTime; ambient = [];
+      [110, 164.81, 220.4].forEach((f, i) => {                   // alçak nefes alan pad
+        const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+        const g = ac.createGain(); g.gain.setValueAtTime(0.0001, n); g.gain.linearRampToValueAtTime(0.026, n + 2.5);
+        const lfo = ac.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.05 + i * 0.03;
+        const lg = ac.createGain(); lg.gain.value = 0.012; lfo.connect(lg); lg.connect(g.gain);
+        o.connect(g); g.connect(master); o.start(); lfo.start();
+        ambient.push({ o, g }, { o: lfo, g: lg });
+      });
+      // Yumuşak, seyrek pentatonik arpej — düz drone değil, "müziksi" bir his.
+      const scale = [329.63, 392, 440, 523.25, 587.33, 659.25];
+      arp = setInterval(() => {
+        if (muted) return;
+        tone(scale[Math.floor(Math.random() * scale.length)], { type: 'sine', dur: 2.4, gain: 0.05, attack: 0.35 });
+      }, 3000);
+    },
+    click() { tone(520, { type: 'triangle', dur: 0.05, gain: 0.10 }); },
+    target() { tone(300, { dur: 0.08, gain: 0.12, to: 430 }); },
+    reveal(role) {
+      if (role === 'killer') chord([146.83, 196], { type: 'sawtooth', dur: 1.3, gain: 0.11, stagger: 0.1 });
+      else chord([392, 523.25], { type: 'sine', dur: 0.9, gain: 0.12, stagger: 0.07 });
+    },
+    sleep() { tone(330, { dur: 0.75, gain: 0.18, to: 110 }); },
+    accuseStart() { tone(220, { type: 'sawtooth', dur: 0.9, gain: 0.10, to: 460 }); },
+    reveal2() { tone(660, { type: 'square', dur: 0.12, gain: 0.11 }); },
+    verdict(correct) {
+      if (correct) chord([523.25, 659.25, 783.99], { type: 'triangle', dur: 0.8, gain: 0.14, stagger: 0.06 });
+      else tone(180, { type: 'sawtooth', dur: 0.5, gain: 0.16, to: 80 });
+    },
+    shot() { tone(130, { type: 'square', dur: 0.18, gain: 0.22, to: 44 }); },
+    ready() { tone(880, { dur: 0.09, gain: 0.07 }); },
+    over(won) {
+      if (won) chord([523.25, 659.25, 783.99, 1046.5], { type: 'triangle', dur: 1.0, gain: 0.15, stagger: 0.09 });
+      else chord([220, 174.61, 130.81], { type: 'sine', dur: 1.1, gain: 0.13, stagger: 0.11 });
+    },
+  };
+})();
+
+function connect(query) {
+  ws = new WebSocket(`${wsBase}/${query}`);
+  ws.addEventListener('message', ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.t === 'state') console.debug('[state]', msg);   // elle sizinti testi
+    if (msg.t === 'lobby') showWaiting(msg);                 // oda bekleme salonu
+    else if (msg.t === 'welcome') { hideWaiting(); myId = msg.id; names = msg.names; buildScene(); showChat(true); }
+    else if (msg.t === 'state') ingest(msg);
+    else if (msg.t === 'over') { over = { winner: msg.winner, killer: msg.killer }; endRound(); }
+    else if (msg.t === 'chat') addChat(msg.from, msg.text, msg.channel);
+    else if (msg.t === 'error') backToLobby(msg.msg);
+  });
+  ws.addEventListener('close', () => { if (!over) hud.innerHTML = 'bağlantı kapandı'; });
+}
+
+function ingest(v) {
+  view = v; phase = v.phase;
+  myRole = v.me.role; myAlive = v.me.alive;
+  bulletUsed = v.public[myId]?.bulletUsed ?? bulletUsed;
+  cooldown = v.me.cooldown ?? 0;
+
+  if (!roleShown) { roleShown = true; showRole(); }   // tur başı: rolünü göster
+  if (!scene) return;
+  // Kafa hedefini ilk state'te sunucudan al (sicramasin).
+  if (aimHeading === null && v.public[myId]) aimHeading = v.public[myId].heading;
+  for (const e of v.events) {
+    if (e.t === 'gaze' && chars[e.actor]) chars[e.actor].playGaze();
+    if (e.t === 'sleep' && chars[e.victim]) { log(`${names[e.victim]} uyudu`); SND.sleep(); }
+    if (e.t === 'scene') {
+      if (e.act === 1) {
+        sceneInfo = { accuser: e.accuser, target: e.target, t0: performance.now(), result: null, verdictAt: 0 };
+        SND.accuseStart(); setTimeout(() => SND.reveal2(), 1300);   // 1. perde sesi → 2. perdede hedef reveal
+      }
+      if (e.act === 3 && sceneInfo) { sceneInfo.result = e.correct; sceneInfo.verdictAt = performance.now(); SND.verdict(e.correct); }
+    }
+  }
+  // Uyuma durumunu her zaman state'ten dogrula (olay kaçsa bile).
+  for (const p of v.public) chars[p.id]?.setSleeping(!p.alive);
+  // Uykucuya özel: bekleme dolunca ince "hazır" tıkı (sadece sen duyarsın).
+  if (myRole === 'killer' && prevCooldown > 0 && cooldown <= 0) SND.ready();
+  prevCooldown = cooldown;
+}
+
+// ---- Rol gösterimi (tur başında) — ekrana tıklayınca kapanır ----
+function showRole() {
+  roleActive = true;
+  SND.reveal(myRole);                          // uykucu: uğursuz · uyanık: nötr (sadece sen)
+  const el = document.getElementById('roleReveal');
+  const body = myRole === 'killer'
+    ? `<div class="big role-killer">SEN UYKUCU'SUN</div>
+       <div class="goal">Kimseyle göz göze gelip onu uyut — ama hamlen gürültüyle aynı görünür,
+       belli etme. <b>4 kişiyi uyut, masayı 3'e indir.</b> Kurşununu asla sıkma; sıkarsan yanarsın.</div>`
+    : `<div class="big role-awake">SEN UYANIK'SIN</div>
+       <div class="goal">Uykucuyu bul. Biri uyumadan önce ona kim uykulu baktı — izle, karşılaştır.
+       Emin olunca bir oyuncuya tıklayıp <b>suçla</b>. Doğru bilirsen kazanırsın; yanlışsa sen uyursun.</div>`;
+  el.innerHTML = body + `<div class="tap">başlamak için ekrana tıkla</div>`;
+  el.style.display = 'flex';
+  document.getElementById('hint').innerHTML = myRole === 'killer'
+    ? 'sürükle — bak · bir oyuncuya tıkla — <b>UYUT</b> (göz göze gelince uyur · 45 sn bekleme)'
+    : 'sürükle — bak · oyuncuya tıkla (ona dön) · tekrar tıkla — <b>suçla</b> (kurşun)';
+}
+function hideRole() { roleActive = false; document.getElementById('roleReveal').style.display = 'none'; }
+
+// ---- Tur sonu: puan hesapla + sonuç ekranı ----
+function endRound() {
+  const won = (myRole === 'killer' && over.winner === 'killer') ||
+              (myRole === 'awake' && over.winner === 'awake');
+  let pts = 0, hero = false;
+  if (won && myRole === 'killer') pts = 5;                     // uykucu olarak 4 uyutmak zor
+  else if (won && myRole === 'awake') {
+    pts = 2;
+    if (myAccuseTarget === over.killer) { pts += 3; hero = true; }  // uykucuyu SEN bildin
+  } else {
+    pts = -2;                                                 // kaybettin
+  }
+  score = Math.max(0, score + pts);                           // 0'ın altına inmez
+  localStorage.setItem('gu_score', String(score));
+  SND.over(won);
+  showOver(pts, won, hero);
+}
+
+// Oyundan çıkmak = pes etmek = kaybetmek.
+function quitGame() {
+  if (!ws) return;
+  score = Math.max(0, score - 2);
+  localStorage.setItem('gu_score', String(score));
+  try { ws.close(); } catch { /* yut */ }
+  location.reload();                                          // lobiye dön
+}
+
+function showOver(pts, won, hero) {
+  const el = document.getElementById('over');
+  const title = over.winner === 'awake' ? 'UYANIKLAR KAZANDI' : 'UYKUCU KAZANDI';
+  el.innerHTML =
+    `<div class="big">${title}</div>
+     <div class="info">uykucu: <b>${names[over.killer] ?? '?'}</b> &nbsp;·&nbsp;
+       sen ${myRole === 'killer' ? 'uykucuydun' : 'uyanıktın'} —
+       <b class="${won ? 'role-awake' : 'role-killer'}">${won ? 'KAZANDIN' : 'kaybettin'}</b></div>
+     <div class="pts">${pts > 0 ? '+' + pts + ' puan' : pts < 0 ? pts + ' puan' : 'puan yok'}${hero ? '  (uykucuyu sen bildin!)' : ''}</div>
+     <div class="total">toplam puan: ${score}</div>
+     <button id="againBtn" class="gu-btn">↻ Tekrar Oyna</button>`;
+  document.getElementById('quit').style.display = 'none';
+  showChat(false);
+  el.style.display = 'flex';
+  document.getElementById('againBtn').onclick = () => location.reload();  // lobiye dön, mod seç
+}
+
+// =====================================================================
+//  SAHNE  (asagisi buyuk olcude korundu; sadece cizim.)
+// =====================================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16161a);
+scene.fog = new THREE.Fog(0x16161a, 14, 26);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // mobilde 2 degil (isinma)
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x9aa4bb, 0x201a16, 0.75));
+const key = new THREE.DirectionalLight(0xfff0dd, 0.85);
+key.position.set(4, 9, 3);
+scene.add(key);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(13, 64),
+  new THREE.MeshStandardMaterial({ color: 0x22222a, roughness: 1 })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+const table = new THREE.Group();
+table.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(3, 3, 0.16, 64),
+  new THREE.MeshStandardMaterial({ color: 0x3b3b45, roughness: 0.85 })
+));
+table.children[0].position.y = 1.0;
+const tbase = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.5, 0.9, 1.0, 24),
+  new THREE.MeshStandardMaterial({ color: 0x2e2e36, roughness: 1 })
+);
+tbase.position.y = 0.5;
+table.add(tbase);
+scene.add(table);
+
+// Karakter fabrikasi — DEGISMEDI. Render dongusu bu dort seyden fazlasini bilmez.
+function createCharacter(tint) {
+  const root = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.75 });
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.95, 20), skin);
+  torso.position.y = 1.42;
+  root.add(torso);
+
+  const neck = new THREE.Group();
+  neck.position.y = 1.95;
+  root.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 16), skin);
+  head.position.y = 0.2;
+  neck.add(head);
+
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.065, 0.22, 12),
+    new THREE.MeshStandardMaterial({ color: 0xd98a5a, roughness: 0.6 })
+  );
+  nose.position.set(0.26, 0.2, 0);
+  nose.rotation.z = -Math.PI / 2;
+  neck.add(nose);
+
+  return {
+    root, neck, head,
+    _gaze: 0,
+    setSleeping(v) {
+      root.rotation.x = v ? 0.42 : 0;
+      skin.color.setHex(v ? 0x33333c : tint);
+    },
+    setGlow(hex) {                              // suclama sahnesinde suclayan/hedef parlar
+      skin.emissive.setHex(hex ?? 0x000000);
+      skin.emissiveIntensity = hex == null ? 0 : 0.7;
+    },
+    playGaze() { this._gaze = 0.55; },
+    update(dt) {
+      if (this._gaze > 0) {
+        this._gaze -= dt;
+        neck.rotation.z = -Math.sin(Math.max(0, this._gaze) * 5.7) * 0.16;
+      } else neck.rotation.z = 0;
+    }
+  };
+}
+
+const TINTS = [0x7f77dd, 0x5dcaa5, 0xd85a30, 0xd4537e, 0x378add, 0xba7517, 0x888780];
+let chars = [];
+let coneGroup = null;
+let renderHeading = [];
+let labels = [];
+const labelsEl = document.getElementById('labels');
+
+function buildScene() {
+  chars = seatXY.map((p, i) => {
+    const c = createCharacter(TINTS[i % TINTS.length]);
+    c.root.position.set(p.x, 0, p.y);
+    c.root.userData.pid = i;
+    scene.add(c.root);
+
+    c.ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.52, 0.68, 32),
+      new THREE.MeshBasicMaterial({ color: 0xefa027, transparent: true, opacity: 0, side: 2 })
+    );
+    c.ring.rotation.x = -Math.PI / 2;
+    c.ring.position.set(p.x, 0.03, p.y);
+    scene.add(c.ring);
+
+    const chair = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.9, 0.8),
+      new THREE.MeshStandardMaterial({ color: 0x2a2a32, roughness: 1 })
+    );
+    chair.position.set(p.x * 1.16, 0.45, p.y * 1.16);
+    scene.add(chair);
+    return c;
+  });
+  renderHeading = seatXY.map(p => Math.atan2(-p.y, -p.x));
+
+  // Kendi konin — sadece senin. Kimsenin konisini goremezsin.
+  coneGroup = new THREE.Group();
+  const coneMesh = new THREE.Mesh(
+    new THREE.CircleGeometry(9, 40, -halfCone(), halfCone() * 2),
+    new THREE.MeshBasicMaterial({ color: 0x5dcaa5, transparent: true, opacity: 0.1, side: 2 })
+  );
+  coneMesh.rotation.x = -Math.PI / 2;
+  coneGroup.add(coneMesh);
+  const me = seatXY[myId];
+  coneGroup.position.set(me.x, 0.04, me.y);
+  coneGroup.visible = false;           // birinci sahista kamera = koni; ayri koni cizmiyoruz
+  scene.add(coneGroup);
+
+  // Kendi govdeni gorme (icindesin). Uyursan tepe goruntusune gecince gorunur olur.
+  chars[myId].root.visible = false;
+
+  // Her karakterin ustunde isim etiketi (3D pozisyonu her karede ekrana yansitilir).
+  labels = seatXY.map((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'label';
+    const hex = '#' + TINTS[i % TINTS.length].toString(16).padStart(6, '0');
+    d.innerHTML = `<span class="dot" style="background:${hex}"></span><span class="name">${names[i] ?? ''}</span>`;
+    labelsEl.appendChild(d);
+    return d;
+  });
+}
+
+// =====================================================================
+//  KAMERA + GIRDI  (BIRINCI SAHIS; aim -> sunucuya; istemci mantik calistirmaz)
+//  Kamera senin sandalyende, kafanin baktigi yone bakar. FOV = koni (110° yatay).
+//  Suclama sahnesinde / uyudugunda kamera yukselip donmus masayi tepeden gosterir.
+// =====================================================================
+const ORBIT_A = -Math.PI / 2, ORBIT_H = 13, ORBIT_R = 13;  // tepe goruntusu pozu
+let aimHeading = null;                 // kendi kafa hedefim (surukleyerek doner)
+let dragging = false, lastX = 0;
+let blend = 0;                         // 0 = birinci sahis, 1 = tepe (sahne/olu/bitis)
+const fpPos = new THREE.Vector3(), fpTgt = new THREE.Vector3();
+const ovPos = new THREE.Vector3(), ovTgt = new THREE.Vector3(0, 1.2, 0), camTgt = new THREE.Vector3();
+
+function send(o) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o)); }
+
+// Girdi: SÜRÜKLE = etrafina bak (kafani cevir).  TIKLA (bir oyuncuya) = sucla.
+// Kursun omurde bir kez oldugu icin iki asamali: 1. tik hedefler, 2. tik ateşler.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let pendingAccuse = -1;                 // uyanık: 1. tikta hedeflenen (kirmizi "suçla?")
+let sleeperTarget = -1;                 // uykucu: seçtiği kurban (göz göze gelince uyur)
+let downX = 0, downY = 0, movedMax = 0;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (phase !== 'live' || !myAlive) return;
+  dragging = true; lastX = e.clientX; downX = e.clientX; downY = e.clientY; movedMax = 0;
+});
+addEventListener('pointerup', e => {
+  if (roleActive) { hideRole(); return; }   // rol ekranını kapat; bu tıklama suçlama sayılmaz
+  const wasDrag = movedMax > 6;
+  dragging = false;
+  if (wasDrag) return;                  // surukleme -> bakmaydi, tik degil
+  if (phase !== 'live' || !myAlive) return;
+  handleClick(e.clientX, e.clientY);
+});
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  movedMax = Math.max(movedMax, Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY));
+  if (phase !== 'live' || !myAlive || aimHeading === null) return;
+  aimHeading += (e.clientX - lastX) * 0.006;
+  lastX = e.clientX;
+});
+addEventListener('keydown', e => { if (e.key === 'Escape') pendingAccuse = -1; });
+
+// Ekran-uzayi secim: karakterin dikey silueti (baştan ayağa) bir cizgi; tiklama
+// bu cizgiye yakinsa o karakter secilir. Boylece GÖVDE/KAFA/AYAK fark etmez —
+// adamin herhangi bir yerine (hatta biraz yanina) tiklamak yeter. Raycast'ten saglam.
+const _pv = new THREE.Vector3();
+function charScreen(i, y) {
+  _pv.set(seatXY[i].x, y, seatXY[i].y).project(camera);
+  return { x: (_pv.x * 0.5 + 0.5) * innerWidth, y: (-_pv.y * 0.5 + 0.5) * innerHeight, front: _pv.z <= 1 };
+}
+function distToSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// Iki asamali suclama: 1. tik -> ona dön + hedefle (kırmızı "suçla?"), 2. tik -> suçla. Esc iptal.
+let lastClickAt = -1e9;
+function handleClick(cx, cy) {
+  if (!view || myId < 0) return;         // oyun daha başlamadı (lobi tıklaması vb.)
+  const now = performance.now();
+  if (now - lastClickAt < 300) return;   // sentetik cift-olaya karsi
+  lastClickAt = now;
+  // Tiklamaya en yakin (canli) karakteri bul.
+  let pid = -1, best = 70;               // px tolerans
+  for (let i = 0; i < seatXY.length; i++) {
+    if (i === myId || !view.public[i]?.alive) continue;
+    const top = charScreen(i, 2.3), bot = charScreen(i, 0.4);   // bas ustu -> ayak
+    if (!top.front || !bot.front) continue;
+    const d = distToSeg(cx, cy, top.x, top.y, bot.x, bot.y);
+    if (d < best) { best = d; pid = i; }
+  }
+  if (pid < 0) { pendingAccuse = -1; sleeperTarget = -1; return; }
+  aimHeading = Math.atan2(seatXY[pid].y - seatXY[myId].y, seatXY[pid].x - seatXY[myId].x); // ona dön
+
+  if (myRole === 'killer') {
+    // UYKUCU: tıkla = kurbanı seç. Suçlama YOK (suçlarsan yanarsın). Göz göze gelip
+    // bekleme dolunca kurban 5 sn sonra uyur — sunucu otomatik uygular.
+    sleeperTarget = pid; SND.target();
+    send({ t: 'strike', target: pid });
+    return;
+  }
+
+  // UYANIK: iki aşamalı suçlama (kurşun ömürde bir).
+  if (bulletUsed) { log('kurşunun yandı — ömürde bir kez'); pendingAccuse = -1; return; }
+  if (pendingAccuse === pid) { send({ t: 'accuse', target: pid }); myAccuseTarget = pid; pendingAccuse = -1; SND.shot(); } // 2. tik: suçla
+  else { pendingAccuse = pid; SND.target(); }                                            // 1. tik: hedefle
+}
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// camera.fov DIKEY'dir. 110° yatayi ekran oranindan dikeye cevir (PLAN'daki tuzak).
+function coneVFovDeg() {
+  const hfov = CONE_DEG * Math.PI / 180;
+  return 2 * Math.atan(Math.tan(hfov / 2) / camera.aspect) * 180 / Math.PI;
+}
+
+// aim gonderimini throttle et: 15Hz'den sik gonderme.
+let lastAimSent = null;
+setInterval(() => {
+  if (phase !== 'live' || !myAlive || aimHeading === null) return;
+  if (aimHeading === lastAimSent) return;
+  lastAimSent = aimHeading;
+  send({ t: 'aim', h: aimHeading });
+}, 1000 / 15);
+
+
+// =====================================================================
+//  DONGU — state paketi geliyor, sahne onu ciziyor.
+// =====================================================================
+const hud = document.getElementById('hud');
+const bannerEl = document.getElementById('banner');
+
+// ---- Yazışma + olay akışı (tek besleme, sol alt) ----
+const chatEl = document.getElementById('chat');
+const chatLog = document.getElementById('chatLog');
+const chatInput = document.getElementById('chatInput');
+const esc = s => String(s).replace(/[<>&]/g, '');
+function pushLine(html, cls) {
+  const d = document.createElement('div');
+  d.className = 'm' + (cls ? ' ' + cls : '');
+  d.innerHTML = html;
+  chatLog.appendChild(d);
+  while (chatLog.children.length > 7) chatLog.removeChild(chatLog.firstChild);
+}
+function log(s) { pushLine(esc(s), 'sys'); }                      // oyun olayı (X uyudu, kurşun yandı)
+function addChat(from, text, channel) {                          // gelen mesaj
+  const tag = channel === 'dead' ? ' (rüya)' : '';
+  pushLine(`<b>${esc(from)}${tag}:</b> ${esc(text)}`, channel === 'dead' ? 'dead' : '');
+}
+function showChat(on) { chatEl.style.display = on ? 'block' : 'none'; if (!on) chatLog.innerHTML = ''; }
+chatEl.addEventListener('pointerup', e => e.stopPropagation());   // chat tıklaması suçlama/uyut sayılmaz
+chatInput.addEventListener('keydown', e => {
+  e.stopPropagation();                                           // yazarken oyun kısayolları tetiklenmesin
+  if (e.key === 'Enter' && chatInput.value.trim()) { send({ t: 'chat', text: chatInput.value.slice(0, 200) }); chatInput.value = ''; }
+});
+
+function lerpAngle(a, b, t) {
+  let d = ((b - a + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  return a + d * t;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(now - last, 100) / 1000; last = now;
+
+  if (view && chars.length) {
+    for (const p of view.public) {
+      const c = chars[p.id]; if (!c) continue;
+      // 15Hz state -> 60fps: gelen aciya dogru lerp. Kafa donusu gecikmeye duyarsiz.
+      renderHeading[p.id] = lerpAngle(renderHeading[p.id], p.heading, Math.min(1, dt * 12));
+      c.neck.rotation.y = -renderHeading[p.id];
+      c.update(dt);
+      const l = p.alive ? p.light : 0;
+      c.ring.material.opacity += (Math.min(l / 3, 1) * 0.75 - c.ring.material.opacity) * dt * 6;
+    }
+  }
+
+  // Birinci sahis <-> tepe gecisi. Canliyken FP; sahne/olu/bitiste kamera yukselir.
+  const overhead = !!over || phase !== 'live' || !myAlive;
+  blend += ((overhead ? 1 : 0) - blend) * Math.min(1, dt * 3);
+  // Kendi karakterin: birinci sahista gizli (icindesin), tepe/sahne/olu goruntusunde GORUNUR.
+  if (chars[myId]) chars[myId].root.visible = overhead;
+  if (myId >= 0 && renderHeading.length) {
+    const meS = seatXY[myId], h = renderHeading[myId] ?? 0;
+    fpPos.set(meS.x, 1.9, meS.y);                               // goz hizasi, kendi sandalyen
+    fpTgt.set(meS.x + Math.cos(h) * 8, 1.05, meS.y + Math.sin(h) * 8); // kafanin baktigi yon
+    ovPos.set(Math.cos(ORBIT_A) * ORBIT_R, ORBIT_H, Math.sin(ORBIT_A) * ORBIT_R);
+    camera.position.lerpVectors(fpPos, ovPos, blend);
+    camTgt.lerpVectors(fpTgt, ovTgt, blend);
+    camera.lookAt(camTgt);
+    const fov = THREE.MathUtils.lerp(coneVFovDeg(), 45, blend); // FP'de = koni; tepede genis
+    if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  }
+
+  updateSceneGlow();
+  drawLabels();
+  drawHud();
+  drawBanner();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Suclama sahnesinde suclayan (mavi) ve hedef (kirmizi, 2. perdeden sonra) parlar.
+function updateSceneGlow() {
+  const on = phase === 'scene' && sceneInfo;
+  const t = on ? (performance.now() - sceneInfo.t0) / 1000 : 0;
+  for (let i = 0; i < chars.length; i++) {
+    if (!chars[i]) continue;
+    let g = null;
+    if (on) {
+      if (i === sceneInfo.accuser) g = 0x3a86ff;              // suclayan
+      if (i === sceneInfo.target && t >= 1.3) g = 0xd4537e;   // hedef (act 2+)
+    }
+    chars[i].setGlow(g);
+  }
+}
+
+// Isim etiketleri: her karakterin kafasini ekrana yansit, div'i oraya koy.
+const _w = new THREE.Vector3();
+function drawLabels() {
+  if (!labels.length || !view) return;
+  // Hedef gecerliligini koru (öldü / sahne dondu / kurşun yandı).
+  if (pendingAccuse >= 0 &&
+      (phase !== 'live' || !myAlive || bulletUsed || !view.public[pendingAccuse]?.alive))
+    pendingAccuse = -1;
+  if (sleeperTarget >= 0 &&
+      (myRole !== 'killer' || !myAlive || !view.public[sleeperTarget]?.alive))
+    sleeperTarget = -1;
+  for (let i = 0; i < labels.length; i++) {
+    const c = chars[i], d = labels[i], p = view.public[i];
+    if (!c || !p) { d.style.display = 'none'; continue; }
+    if (i === myId && blend < 0.5) { d.style.display = 'none'; continue; }  // FP'de kendini gizle
+    c.head.getWorldPosition(_w); _w.y += 0.55;
+    _w.project(camera);
+    if (_w.z > 1) { d.style.display = 'none'; continue; }                   // kamera arkasi
+    d.style.display = 'block';
+    d.style.left = (_w.x * 0.5 + 0.5) * innerWidth + 'px';
+    d.style.top = (-_w.y * 0.5 + 0.5) * innerHeight + 'px';
+
+    const sceneOn = phase === 'scene' && sceneInfo;
+    const tScene = sceneOn ? (performance.now() - sceneInfo.t0) / 1000 : 0;
+    const asSleep = myRole === 'killer' && i === sleeperTarget && p.alive;
+    const asAccuser = sceneOn && i === sceneInfo.accuser;
+    const asTarget = (sceneOn && i === sceneInfo.target && tScene >= 1.3) || i === pendingAccuse || asSleep;
+    d.classList.toggle('dead', !p.alive && !asTarget && !asAccuser);
+    d.classList.toggle('accuser', asAccuser);
+    d.classList.toggle('target', asTarget);
+    let name = names[i];
+    if (asSleep) name += ' — uyut (göz göze bekle)';
+    else if (i === pendingAccuse) name += ' — suçla? (tekrar tıkla)';
+    else if (asAccuser) name = '⟶ ' + name + ' suçluyor';
+    d.querySelector('.name').textContent = name;
+  }
+}
+
+function drawHud() {
+  if (myId < 0 || !view) return;
+  const aliveN = view.public.filter(p => p.alive).length;
+  const coneNames = view.me.cone.map(i => names[i]).filter(Boolean);
+  const roleTxt = myRole === 'killer'
+    ? `<span class="killer">uykucu (SEN)</span>`
+    : `<span class="k">uyanık</span>`;
+  let s =
+    `<b>${names[myId]}</b> (sen) — ${roleTxt}<br>` +
+    `masada <b>${aliveN}</b> / 7<br>` +
+    `konimde: <b>${coneNames.length ? coneNames.join(', ') : '—'}</b><br>` +
+    `ışığım: <b>${view.public[myId]?.light ?? 0}</b><br>` +
+    `kurşun: <b>${bulletUsed ? 'yandı' : 'hazır'}</b>`;
+  if (myRole === 'killer') {
+    // İki şartı ayrı göster: bekleme (2. şart) vs göz göze (1. şart).
+    let st;
+    if (cooldown > 0) st = `bekleme <b>${Math.ceil(cooldown / 1000)} sn</b>`;
+    else if (!view.me.eye) st = `<b>HAZIR</b> — kurbanınla göz göze gel`;
+    else st = `<b style="color:#d4537e">GÖZ GÖZE — uyutuluyor…</b>`;
+    s += `<br>${st}`;
+  }
+  hud.innerHTML = s;
+}
+
+function drawBanner() {
+  if (over) { bannerEl.style.display = 'none'; return; }   // sonuç #over ekranında
+  if (sceneInfo) {
+    const acc = names[sceneInfo.accuser], tgt = names[sceneInfo.target];
+    let txt = null;
+    if (sceneInfo.result !== null) {
+      // Sonuc geldi: karari goster ve act:3'ten 2.5 sn sonra temizle (sahne bitse de).
+      if (performance.now() < sceneInfo.verdictAt + 2500) {
+        txt = sceneInfo.result
+          ? `${tgt} uykucuydu.<br><small>${acc} doğru bildi.</small>`
+          : `${tgt} temiz.<br><small>${acc} uyudu.</small>`;
+      } else { sceneInfo = null; }
+    } else if (phase === 'scene') {
+      const t = (performance.now() - sceneInfo.t0) / 1000;
+      txt = t < 1.3
+        ? `${acc} suçluyor…`                 // 1. perde: kim çekti, hedef gizli
+        : `${acc} → ${tgt}`;                 // 2. perde: hedef açıklandı
+    }
+    if (txt !== null) {
+      bannerEl.style.display = 'flex';
+      bannerEl.innerHTML = `<div>${txt}</div>`;
+      return;
+    }
+  }
+  bannerEl.style.display = 'none';
+}
+
+// =====================================================================
+//  LOBİ + ODA — Botlarla Başla / Oda Kur / Odaya Katıl. Bekleme salonu.
+// =====================================================================
+const lobbyEl = document.getElementById('lobby');
+const waitingEl = document.getElementById('waiting');
+const nameInput = document.getElementById('nameInput');
+const lobbyMsg = document.getElementById('lobbyMsg');
+document.getElementById('lobbyScore').textContent = score;
+
+const quitBtn = document.getElementById('quit');
+quitBtn.addEventListener('pointerup', e => e.stopPropagation());  // suçlama/uyut tetiklenmesin
+quitBtn.addEventListener('click', quitGame);
+
+function playerName() { return (nameInput.value.trim() || 'Sen').slice(0, 16); }
+function go(query) { SND.unlock(); SND.click(); lobbyEl.style.display = 'none'; lobbyMsg.textContent = ''; connect(query); }
+
+// Ses aç/kapa (köşe düğmesi)
+const muteBtn = document.getElementById('mute');
+function refreshMute() { muteBtn.textContent = SND.muted() ? '🔇' : '🔊'; }
+muteBtn.addEventListener('pointerup', e => e.stopPropagation());
+muteBtn.addEventListener('click', () => { SND.unlock(); SND.toggleMute(); refreshMute(); });
+refreshMute();
+
+document.getElementById('startBtn').onclick = () => go(`?bots=6&name=${encodeURIComponent(playerName())}`);
+document.getElementById('createBtn').onclick = () => go(`?create=1&name=${encodeURIComponent(playerName())}`);
+document.getElementById('joinBtn').onclick = () => {
+  const code = document.getElementById('codeInput').value.trim();
+  if (!/^\d{6}$/.test(code)) { lobbyMsg.textContent = '6 haneli oda kodu gir.'; return; }
+  go(`?room=${code}&name=${encodeURIComponent(playerName())}`);
+};
+
+// ---- Bekleme salonu (oda kur / katıl) ----
+document.getElementById('wStart').onclick = () => { SND.click(); send({ t: 'start' }); };
+document.getElementById('wBack').onclick = () => location.reload();
+
+function showWaiting(msg) {
+  lobbyEl.style.display = 'none';
+  waitingEl.style.display = 'flex';
+  quitBtn.style.display = 'none';
+  showChat(true);                             // odada sohbet
+  SND.ambient(true);                          // bekleme salonu atmosferi
+  document.getElementById('wCode').textContent = msg.code;
+  document.getElementById('wPlayers').innerHTML = msg.players
+    .map(n => `<span>${(n || 'oyuncu').replace(/[<>&]/g, '')}</span>`).join('');
+  document.getElementById('wCount').textContent =
+    `${msg.count} / ${msg.max} kişi` + (msg.count < 6 ? ' · boş koltukları bot doldurur' : '');
+  document.getElementById('wStart').style.display = msg.host ? 'block' : 'none';
+  document.getElementById('wWait').style.display = msg.host ? 'none' : 'block';
+}
+function hideWaiting() { waitingEl.style.display = 'none'; quitBtn.style.display = 'block'; SND.ambient(false); }
+function backToLobby(err) {
+  try { ws && ws.close(); } catch { /* yut */ }
+  SND.ambient(true);                          // menüye dönünce müzik sürsün
+  showChat(false);
+  waitingEl.style.display = 'none';
+  quitBtn.style.display = 'none';
+  lobbyEl.style.display = 'flex';
+  if (err) lobbyMsg.textContent = err;
+}
+
+// Dokunmatik cihazda dikey tutunca "yatay çevir" uyarısı (koni yataydır, dikeyde FOV bozulur).
+// Masaüstünü engellemez: yalnız (pointer: coarse) + portre. Native'de manifest yatay kilitler.
+const rotateEl = document.getElementById('rotate');
+const portraitMq = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+function checkOrient() { rotateEl.style.display = portraitMq.matches ? 'flex' : 'none'; }
+portraitMq.addEventListener('change', checkOrient);
+addEventListener('resize', checkOrient);
+checkOrient();
+
+// Lobi müziği: tarayıcı sesi ilk kullanıcı hareketine kadar bloklar. İlk dokunuşta
+// aç ve menüdeysek (lobi/bekleme) müziği başlat.
+function onMenu() { return lobbyEl.style.display !== 'none' || waitingEl.style.display !== 'none'; }
+addEventListener('pointerdown', () => { SND.unlock(); if (!SND.muted() && onMenu()) SND.ambient(true); }, { once: true });
+
+// Paylaşılan bağlantı: URL'de ?room=KOD varsa doğrudan odaya katıl (mobilde link paylaş).
+const _params = new URLSearchParams(location.search);
+const urlRoom = _params.get('room');
+if (urlRoom && /^\d{6}$/.test(urlRoom)) {
+  const urlName = _params.get('name');
+  if (urlName) nameInput.value = urlName.slice(0, 16);          // linkteki adı kullan
+  go(`?room=${urlRoom}&name=${encodeURIComponent(playerName())}`);
+} else {
+  lobbyEl.style.display = 'flex';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules/
+*.log
+_c.mjs
+.env
+.DS_Store
+dist/
+android/
