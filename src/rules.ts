@@ -10,7 +10,7 @@ export const TAU = Math.PI * 2;
 export const TUNING = {
   coneDeg: 110,      // dar = uyaniklar lehine
   noiseMs: 6000,     // sik = hamle kaybolur, uykucu lehine
-  cooldownMs: 45000, // kisa = uykucu hizli toplar
+  cooldownMs: 30000, // kisa = uykucu hizli toplar (45→30: mobil/hizli his)
   winThreshold: 3,   // masa buraya inerse uykucu kazanir
 };
 
