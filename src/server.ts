@@ -118,12 +118,12 @@ class Room {
     }
   }
 
-  start(): void {
+  start(forcedKiller: number | null = null): void {
     if (this.started) return;
     this.started = true;
     const names = this.members.map(m => m.name);
     const seed = Math.floor(Math.random() * 0x7fffffff);
-    this.game = new Game(names, seed);
+    this.game = new Game(names, seed, forcedKiller);
 
     const seats = seatPositions(SEATS);
     for (let id = 0; id < this.members.length; id++) {
@@ -257,12 +257,16 @@ wss.on('connection', (ws, req) => {
 
   let room: Room;
   if (bots > 0) {
-    // Botlarla tek başına: yeni oda, doldur, hemen başla.
+    // Botlarla tek başına: yeni oda, doldur, hemen başla. İstenirse rol seçilir.
     room = new Room(newCode());
     rooms.set(room.code, room);
-    room.addHuman(ws, name);
+    room.addHuman(ws, name);   // insan = koltuk 0
     room.addBots(bots);
-    room.start();
+    const role = q.get('role');
+    let forced: number | null = null;
+    if (role === 'killer') forced = 0;                                          // insan uykucu
+    else if (role === 'awake') forced = 1 + Math.floor(Math.random() * (room.count - 1)); // bir bot uykucu
+    room.start(forced);
   } else if (create) {
     // Oda kur: kurucu = ilk üye (index 0). Başlatmayı kurucu tetikler.
     room = new Room(newCode());

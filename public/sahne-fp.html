@@ -115,10 +115,9 @@
   @keyframes gu-sweep { to { transform: translate(-50%, -50%) rotate(360deg); } }
   .card {
     position: relative; z-index: 1; width: min(400px, 92vw); box-sizing: border-box;
-    max-height: calc(100vh - 20px); overflow-y: auto;   /* ekrana sığ, taşarsa iç kaydır */
-    background: rgba(21,21,27,.74); border: 1px solid #2a2a34; border-radius: 18px;
+    max-height: calc(100vh - 20px); overflow-y: auto; -webkit-overflow-scrolling: touch; /* akıcı kaydırma */
+    background: #14141a; border: 1px solid #2a2a34; border-radius: 18px;   /* opak: backdrop-blur yok (mobilde kasıyordu) */
     box-shadow: 0 24px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.045);
-    backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
     padding: 26px 24px; display: flex; flex-direction: column; gap: 11px; text-align: center;
   }
   .brand { display: flex; align-items: center; justify-content: center; gap: 12px; }
@@ -148,6 +147,12 @@
     border: 0; font-weight: 700; box-shadow: 0 6px 20px rgba(75,191,149,.25); }
   button.gu-btn.primary:hover { background: linear-gradient(180deg, #70e0b8, #52caa0); }
   button.gu-btn.ghost { background: transparent; border-color: #30303a; color: #9a9aa4; }
+  .roleSel { display: flex; gap: 5px; }
+  .roleSel button {
+    flex: 1; font: 11px/1 ui-monospace, Menlo, monospace; color: #8f8f98;
+    background: #191921; border: 1px solid #2c2c36; border-radius: 8px; padding: 8px 4px; cursor: pointer;
+  }
+  .roleSel button.on { color: #08120e; background: #5dcaa5; border-color: #5dcaa5; font-weight: 700; }
   .divider { display: flex; align-items: center; gap: 10px; color: #55555f; font-size: 11px; margin: 3px 0; }
   .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #26262f; }
   .joinRow { display: flex; gap: 8px; }
@@ -199,6 +204,11 @@
   <div class="scorepill">toplam puan <b id="lobbyScore">0</b></div>
   <input id="nameInput" class="gu-input" placeholder="adın" maxlength="16">
   <button id="startBtn" class="gu-btn primary">🤖 Botlarla Başla</button>
+  <div class="roleSel" id="roleSel">
+    <button data-r="random" class="on">rastgele</button>
+    <button data-r="killer">uykucu ol</button>
+    <button data-r="awake">uyanık ol</button>
+  </div>
   <div class="divider">ya da arkadaşlarla</div>
   <button id="createBtn" class="gu-btn">➕ Oda Kur</button>
   <div class="joinRow">
@@ -911,7 +921,16 @@ muteBtn.addEventListener('pointerup', e => e.stopPropagation());
 muteBtn.addEventListener('click', () => { SND.unlock(); SND.toggleMute(); refreshMute(); });
 refreshMute();
 
-document.getElementById('startBtn').onclick = () => go(`?bots=6&name=${encodeURIComponent(playerName())}`);
+// Bots modunda rol seçimi (odalarda rastgele kalır).
+let botRole = 'random';
+const roleSel = document.getElementById('roleSel');
+roleSel.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  SND.unlock(); SND.click(); botRole = b.dataset.r;
+  roleSel.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+});
+document.getElementById('startBtn').onclick = () =>
+  go(`?bots=6&role=${botRole}&name=${encodeURIComponent(playerName())}`);
 document.getElementById('createBtn').onclick = () => go(`?create=1&name=${encodeURIComponent(playerName())}`);
 document.getElementById('joinBtn').onclick = () => {
   const code = document.getElementById('codeInput').value.trim();

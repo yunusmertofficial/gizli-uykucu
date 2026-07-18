@@ -93,10 +93,13 @@ export class Game {
   winner: 'awake' | 'killer' | null = null;
   log: string[] = [];
 
-  constructor(names: string[], seed = 1) {
+  // forcedKiller: bots modunda insanın rolü seçmesi için (null = rastgele, normal oyun).
+  // rand() yine tüketilir → RNG akışı değişmez, ölçüm scriptleri etkilenmez.
+  constructor(names: string[], seed = 1, forcedKiller: number | null = null) {
     this.rand = rng(seed);
     const seats = seatPositions(names.length);
-    const killerSeat = Math.floor(this.rand() * names.length);
+    let killerSeat = Math.floor(this.rand() * names.length);
+    if (forcedKiller !== null && forcedKiller >= 0 && forcedKiller < names.length) killerSeat = forcedKiller;
 
     this.players = names.map((name, i) => ({
       id: i,
