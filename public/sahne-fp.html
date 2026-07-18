@@ -115,10 +115,11 @@
   @keyframes gu-sweep { to { transform: translate(-50%, -50%) rotate(360deg); } }
   .card {
     position: relative; z-index: 1; width: min(400px, 92vw); box-sizing: border-box;
+    max-height: calc(100vh - 20px); overflow-y: auto;   /* ekrana sığ, taşarsa iç kaydır */
     background: rgba(21,21,27,.74); border: 1px solid #2a2a34; border-radius: 18px;
     box-shadow: 0 24px 70px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.045);
     backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
-    padding: 30px 26px; display: flex; flex-direction: column; gap: 12px; text-align: center;
+    padding: 26px 24px; display: flex; flex-direction: column; gap: 11px; text-align: center;
   }
   .brand { display: flex; align-items: center; justify-content: center; gap: 12px; }
   .brand .eye { font-size: 24px; color: #5dcaa5; text-shadow: 0 0 18px rgba(93,202,165,.6);
@@ -160,6 +161,25 @@
   .wlist { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin: 8px 0; min-height: 30px; }
   .wlist span { background: #22222c; border: 1px solid #34343f; border-radius: 8px;
     padding: 6px 12px; color: #d8d8dd; font-size: 13px; }
+  /* Kısa/yatay telefon: kompakt boyutlar (yoksa kart ekrandan taşar) */
+  @media (max-height: 560px) {
+    .card { padding: 14px 20px; gap: 7px; max-height: calc(100vh - 10px); border-radius: 14px; }
+    .brand { gap: 8px; }
+    .brand .eye { font-size: 18px; }
+    .card h1 { font-size: 17px; letter-spacing: 2px; }
+    .card .sub { font-size: 10.5px; line-height: 1.4; }
+    .scorepill { padding: 3px 11px; font-size: 10px; }
+    .gu-input { padding: 8px 12px; font-size: 13px; }
+    button.gu-btn { padding: 9px 13px; font-size: 13px; }
+    .divider { margin: 0; font-size: 10px; }
+    .wlabel { font-size: 10px; }
+    .wcode { font-size: 28px; letter-spacing: 5px; margin: 0 0 2px; }
+    .wlist { margin: 5px 0; }
+    .wlist span { padding: 4px 9px; font-size: 12px; }
+    .foot { font-size: 10px; }
+    #roleReveal .big, #over .big { font-size: 24px; }
+    #roleReveal .goal, #over .info { font-size: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -235,8 +255,11 @@ let over = null;                            // { winner, killer }
 //  SOKET + LOBİ  (bağlantı "Başla" ile kurulur, sayfa açılınca değil)
 // =====================================================================
 // Sunucu adresi: web'de (sunucu tarafından servis edilir) location.host yeterli.
-// Native pakette (Capacitor) window.GU_WS'i Coolify adresine ayarla: örn "wss://gizli.alanadi.com".
-const wsBase = window.GU_WS || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+// Native pakette (Capacitor) sabit Coolify sunucusuna bağlanır (asset'ler pakette, sunucu uzakta).
+const NATIVE_WS = 'ws://liu3jjfo93zciudlpwz27s1w.5.189.164.160.sslip.io';
+const wsBase = window.GU_WS
+  || (window.Capacitor ? NATIVE_WS
+      : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
 let ws = null;
 let roleShown = false;
 let roleActive = false;                       // rol ekranı açıkken tıklama = kapat (suçlama değil)
