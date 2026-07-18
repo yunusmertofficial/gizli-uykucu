@@ -69,6 +69,7 @@ export interface PrivateMe {
   cone: number[];               // konimdeki id'ler — sadece bana
   cooldown?: number;            // sadece uykucuya: bekleme (sn)
   eye?: boolean;                // sadece uykucuya: biriyle karşılıklı göz göze mi
+  striking?: { victim: number; ms: number }; // uykucuya: yolda olan hamle (kim, kaç ms sonra uyur)
 }
 export interface PublicState {
   public: PublicPlayer[];
@@ -310,6 +311,12 @@ export function viewFor(game: Game, id: number, events: GameEvent[]): View {
       // Sadece uykucunun paketinde; uyanıklar bunu bilirse hamle zamanı sızardı.
       eye: me.role === 'killer'
         ? game.alive.some(p => p !== me && eyeContact(me, p))
+        : undefined,
+      // Uykucuya özel: yolda olan hamlem (kimi uyuttuğum + kaç ms sonra uyuyacağı).
+      // Sadece uykucu görür; sızmaz. Kurbanın uyuması zaten kamuya açık olacak ama
+      // "5 sn içinde uyuyacak" ön bilgisi yalnızca hamleyi yapan uykucuya gösterilir.
+      striking: me.role === 'killer'
+        ? (() => { const p = game.pending.find(x => x.striker === id); return p ? { victim: p.victim, ms: p.ms } : undefined; })()
         : undefined,
     },
     // Olaylar: yuz katmani sadece konimdekiler icin.

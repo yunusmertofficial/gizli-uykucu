@@ -300,6 +300,16 @@ wss.on('connection', (ws, req) => {
         if (humans === 1) {                          // solo pratik: kurucu rolü seçebilir (adil, kimseyi etkilemez)
           if (m.role === 'killer') forced = 0;                                       // kurucu uykucu
           else if (m.role === 'awake') forced = 1 + Math.floor(Math.random() * (SEATS - 1)); // bir bot uykucu
+        } else {
+          // Çok oyunculu: uykucu koltuğu ağırlıklı seçilir — gerçek oyuncular botlardan
+          // daha yüksek ihtimalle uykucu olur (daha zevkli). Koltuk 0..humans-1 = insanlar.
+          // Her insan HUMAN_WEIGHT kat, her bot 1 kat. Örn. 3 insan/4 bot → ~%60 insan.
+          const HUMAN_WEIGHT = 2;
+          const weights: number[] = [];
+          for (let i = 0; i < SEATS; i++) weights.push(i < humans ? HUMAN_WEIGHT : 1);
+          const total = weights.reduce((a, b) => a + b, 0);
+          let r = Math.random() * total;
+          for (let i = 0; i < SEATS; i++) { r -= weights[i]; if (r < 0) { forced = i; break; } }
         }
         R.start(forced);
       }
